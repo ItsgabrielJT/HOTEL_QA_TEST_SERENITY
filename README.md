@@ -63,10 +63,12 @@ hotel-booking-e2e/
 │       │       │   ├── ThePaymentError.java
 │       │       │   ├── TheBookingCode.java
 │       │       │   ├── TheRoomListIsDisplayed.java
+│       │       │   ├── TheRoomIsNotListed.java
 │       │       │   └── TheConfirmationTitle.java
 │       │       ├── stepdefinitions/
 │       │       │   ├── Hooks.java                # @Before / @After del Stage
-│       │       │   └── HotelBookingStepDefinitions.java
+│       │       │   ├── HotelBookingStepDefinitions.java
+│       │       │   └── RoomBlockingStepDefinitions.java
 │       │       └── runners/
 │       │           └── CucumberTestSuite.java    # Runner JUnit 4
 │       └── resources/
@@ -74,7 +76,8 @@ hotel-booking-e2e/
 │           └── features/
 │               └── hotel_booking/
 │                   ├── busqueda_habitaciones.feature
-│                   └── reserva_habitacion.feature
+│                   ├── reserva_habitacion.feature
+│                   └── bloqueo_habitacion.feature
 └── target/
     └── site/serenity/                            # Reporte HTML generado
 ```
@@ -150,10 +153,14 @@ Cubre la funcionalidad de búsqueda:
 
 ### `reserva_habitacion.feature`
 Cubre el flujo completo de reserva:
-- **Happy Path** completo (búsqueda → selección → checkout → error → reintento → confirmación)
+- **Happy Path** completo (búsqueda → selección → checkout → reintento si hay rechazo → confirmación)
 - Verificación de redirección al checkout
 - Verificación del mensaje de pago rechazado
 - Verificación del código de reserva en la confirmación
+
+### `bloqueo_habitacion.feature`
+Cubre la disponibilidad concurrente de habitaciones:
+- Habitación seleccionada por el usuario A desaparece del listado para el usuario B
 
 ---
 
@@ -190,31 +197,59 @@ diferente a en-US.
 
 ## 7. Cómo ejecutar los tests
 
-### Instalar dependencias y ejecutar suite completa
+> **Requisito previo:** la aplicación debe estar corriendo en `http://localhost:5173`
+> antes de lanzar cualquier suite.
+
+### Suite completa (todos los escenarios)
+
+```bash
+./gradlew test
+```
+
+### Suite completa + reporte Serenity agregado
 
 ```bash
 ./gradlew test aggregate
 ```
 
-### Ejecutar solo tests marcados como @smoke
-
-```bash
-./gradlew test -Dcucumber.filter.tags="@smoke"
-```
-
-### Ejecutar solo el Happy Path
+### Solo Happy Path (reserva exitosa con o sin reintento de pago)
 
 ```bash
 ./gradlew test -Dcucumber.filter.tags="@happy_path"
 ```
 
+### Solo tests de humo (smoke)
+
+```bash
+./gradlew test -Dcucumber.filter.tags="@smoke"
+```
+
+### Solo bloqueo concurrente de habitación
+
+```bash
+./gradlew test -Dcucumber.filter.tags="@bloqueo_concurrente"
+```
+
+### Solo búsqueda de habitaciones
+
+```bash
+./gradlew test -Dcucumber.filter.tags="@busqueda_con_resultados"
+```
+
+### Combinar etiquetas (OR)
+
+```bash
+./gradlew test -Dcucumber.filter.tags="@smoke or @bloqueo_concurrente"
+```
+
+### Combinar etiquetas (AND)
+
+```bash
+./gradlew test -Dcucumber.filter.tags="@regression and @happy_path"
+```
+
 ### Ejecutar con Chrome headless (para CI/CD)
 
-Descomentar en `src/test/resources/serenity.conf`:
-```
-"--headless=new"
-```
-O pasar como propiedad:
 ```bash
 ./gradlew test -Dchrome.switches="--headless=new,--disable-gpu,--no-sandbox"
 ```
@@ -277,14 +312,15 @@ Y configurar `@CucumberOptions` con `parallel`:
 
 ## Etiquetas disponibles
 
-| Tag | Descripción |
-|---|---|
-| `@smoke` | Tests críticos de humo (ejecución rápida) |
-| `@regression` | Suite completa de regresión |
-| `@happy_path` | Flujo completo de reserva exitosa |
-| `@busqueda_con_resultados` | Búsqueda con resultados positivos |
-| `@busqueda_sin_fechas` | Validación sin fechas seleccionadas |
-| `@busqueda_parametrizada` | Scenario Outline con múltiples fechas |
-| `@seleccion_habitacion` | Verificación de redirección al checkout |
-| `@validacion_pago_rechazado` | Verificación del error de pago |
-| `@confirmacion_con_codigo` | Verificación del código de reserva |
+| Tag | Feature | Descripción |
+|---|---|---|
+| `@smoke` | ambas | Tests críticos de humo (ejecución rápida) |
+| `@regression` | `reserva_habitacion` | Suite completa de regresión de reserva |
+| `@happy_path` | `reserva_habitacion` | Flujo completo de reserva exitosa (con o sin reintento de pago) |
+| `@bloqueo_concurrente` | `bloqueo_habitacion` | Habitación bloqueada no aparece para segundo usuario |
+| `@busqueda_con_resultados` | `busqueda_habitaciones` | Búsqueda con resultados positivos |
+| `@busqueda_sin_fechas` | `busqueda_habitaciones` | Validación sin fechas seleccionadas |
+| `@busqueda_parametrizada` | `busqueda_habitaciones` | Scenario Outline con múltiples combinaciones de fechas |
+| `@seleccion_habitacion` | `reserva_habitacion` | Verificación de redirección al checkout |
+| `@validacion_pago_rechazado` | `reserva_habitacion` | Verificación del mensaje de pago rechazado |
+| `@confirmacion_con_codigo` | `reserva_habitacion` | Verificación del código de reserva en confirmación |
