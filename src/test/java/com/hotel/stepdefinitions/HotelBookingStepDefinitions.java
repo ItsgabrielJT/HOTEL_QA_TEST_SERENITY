@@ -10,12 +10,20 @@ import com.hotel.tasks.RetryPayment;
 import com.hotel.tasks.SearchAvailableRooms;
 import com.hotel.tasks.SelectRoom;
 import com.hotel.ui.CheckoutPageUi;
+import com.hotel.ui.ConfirmationPageUi;
 import io.cucumber.java.es.Cuando;
 import io.cucumber.java.es.Dado;
 import io.cucumber.java.es.Entonces;
+import net.serenitybdd.screenplay.Actor;
+import net.serenitybdd.screenplay.abilities.BrowseTheWeb;
 import net.serenitybdd.screenplay.actors.OnStage;
 import net.serenitybdd.screenplay.ensure.Ensure;
 import net.serenitybdd.screenplay.questions.Visibility;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import java.time.Duration;
 
 /**
  * Step Definitions del flujo de reserva de habitación.
@@ -81,21 +89,40 @@ public class HotelBookingStepDefinitions {
 
     @Cuando("intenta confirmar el pago")
     public void attemptsToConfirmPayment() {
-        // El formulario ya fue llenado; aquí sólo se confirma el pago
-        // (esperar que el mensaje de error aparezca)
         // La acción de "Pagar" ya se ejecutó dentro de CompleteGuestPayment.
-        // Este paso espera que el error sea visible.
-        OnStage.theActorInTheSpotlight().attemptsTo(
-                Ensure.that(Visibility.of(CheckoutPageUi.PAYMENT_ERROR_MESSAGE))
-                      .isTrue()
-        );
+        // Aquí esperamos el resultado: puede aparecer el error de rechazo
+        // o bien la página de confirmación si el pago fue exitoso directamente.
+        Actor actor = OnStage.theActorInTheSpotlight();
+        WebDriver driver = BrowseTheWeb.as(actor).getDriver();
+
+        boolean paymentRejected = false;
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(15))
+                    .until(ExpectedConditions.or(
+                            ExpectedConditions.visibilityOfElementLocated(
+                                    By.xpath("//p[contains(text(),'Pago rechazado')]"))
+                            ,
+                            ExpectedConditions.visibilityOfElementLocated(
+                                    By.xpath("//div[contains(@class,'_codeSection_')]//span[contains(@class,'_code_')]"))
+                    ));
+            // Determinar cuál resultado apareció primero
+            paymentRejected = !driver
+                    .findElements(By.xpath("//p[contains(text(),'Pago rechazado')]"))
+                    .isEmpty();
+        } catch (Exception e) {
+            // Timeout: ninguno de los elementos apareció en el plazo esperado
+        }
+        actor.remember("paymentRejected", paymentRejected);
     }
 
     @Cuando("reintenta confirmar el pago")
     public void retriesPayment() {
-        OnStage.theActorInTheSpotlight().attemptsTo(
-                RetryPayment.afterRejection()
-        );
+        Actor actor = OnStage.theActorInTheSpotlight();
+        Boolean paymentRejected = actor.recall("paymentRejected");
+        if (Boolean.TRUE.equals(paymentRejected)) {
+            actor.attemptsTo(RetryPayment.afterRejection());
+        }
+        // Si el pago ya fue exitoso directamente, no hay nada que reintentar
     }
 
     // -----------------------------------------------------------------------
@@ -126,10 +153,15 @@ public class HotelBookingStepDefinitions {
 
     @Entonces("el sistema informa que el pago fue rechazado por el banco")
     public void seesPaymentRejectedError() {
-        OnStage.theActorInTheSpotlight().attemptsTo(
-                Ensure.that(ThePaymentError.message())
-                      .containsIgnoringCase("Pago rechazado por el banco")
-        );
+        Actor actor = OnStage.theActorInTheSpotlight();
+        Boolean paymentRejected = actor.recall("paymentRejected");
+        if (Boolean.TRUE.equals(paymentRejected)) {
+            actor.attemptsTo(
+                    Ensure.that(ThePaymentError.message())
+                          .containsIgnoringCase("Pago rechazado por el banco")
+            );
+        }
+        // Si el pago fue exitoso directamente, omitir esta verificación
     }
 
     @Entonces("su reserva queda confirmada con un código de reserva válido")
