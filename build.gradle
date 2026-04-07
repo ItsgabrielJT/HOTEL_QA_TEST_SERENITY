@@ -35,6 +35,15 @@ dependencies {
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.13'
 }
 
+// ---- Limpieza de resultados anteriores ----------------------------------
+// Borra los JSON y HTML del run anterior ANTES de cada ejecución,
+// para que el reporte siempre refleje solo los tests del run actual.
+tasks.register('cleanSerenityReports', Delete) {
+    delete fileTree('target/site/serenity') {
+        include '**/*.json', '**/*.html', 'summary.txt'
+    }
+}
+
 // ---- Test task ----------------------------------------------------------
 test {
     useJUnit()
@@ -48,13 +57,23 @@ test {
         events 'passed', 'failed', 'skipped'
         exceptionFormat 'full'
     }
+
+    // Siempre correr (nunca UP-TO-DATE)
+    outputs.upToDateWhen { false }
+
+    // Limpiar resultados anteriores antes de ejecutar
+    dependsOn 'cleanSerenityReports'
 }
 
 // ---- Serenity aggregate report ------------------------------------------
 serenity {
-    reports    = ['single-page-html']
-    testRoot   = 'com.hotel.runners'
+    testRoot        = 'com.hotel.runners'
+    outputDirectory = 'target/site/serenity'
 }
 
-// Asegurar que el reporte se genere después del test
+// Regenerar el reporte siempre al finalizar los tests
 test.finalizedBy('aggregate')
+aggregate.mustRunAfter('test')
+tasks.named('aggregate') {
+    outputs.upToDateWhen { false }
+}
