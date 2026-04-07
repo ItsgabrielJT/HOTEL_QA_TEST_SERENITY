@@ -61,4 +61,16 @@ public class SearchPageUi {
                         "(//article[.//span[text()='" + roomNumber + "']]//button[text()='Seleccionar'])[1]"
                 );
     }
+
+    /**
+     * Tarjeta de habitación identificada por su número en el listado de resultados.
+     * Se usa para verificar presencia o ausencia de una habitación específica.
+     *
+     * @param roomNumber número de habitación con el prefijo '#', p.ej. "#202"
+     */
+    public static Target roomCardWithNumber(String roomNumber) {
+        return Target
+                .the("tarjeta de la habitación " + roomNumber)
+                .locatedBy("//article[.//span[text()='" + roomNumber + "']]");
+    }
 }
