@@ -25,34 +25,13 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import java.time.Duration;
 
-/**
- * Step Definitions del flujo de reserva de habitación.
- *
- * <p>Buenas prácticas aplicadas:
- * <ul>
- *   <li>Los pasos describen el QUÉ (negocio), no el CÓMO (clics, selectors).</li>
- *   <li>Toda la lógica de interacción está delegada en {@code Task} y {@code Question}.</li>
- *   <li>Se usa {@link OnStage#theActorInTheSpotlight()} para los pasos sin sujeto explícito,
- *       siguiendo el patrón de Stage de Serenity.</li>
- *   <li>El actor se recuerda en memoria ({@code remember}/{@code recall}) para transferir
- *       estado entre pasos sin acoplar los escenarios entre sí.</li>
- * </ul>
- */
 public class HotelBookingStepDefinitions {
-
-    // -----------------------------------------------------------------------
-    // GIVEN – Precondiciones
-    // -----------------------------------------------------------------------
 
     @Dado("que {word} se encuentra en la página principal del hotel")
     public void actorIsOnHomePage(String actorName) {
         OnStage.theActorCalled(actorName)
                .wasAbleTo(NavigateToTheHotel.homePage());
     }
-
-    // -----------------------------------------------------------------------
-    // WHEN – Acciones
-    // -----------------------------------------------------------------------
 
     @Cuando("busca habitaciones del {string} al {string}")
     public void searchesForRooms(String checkIn, String checkOut) {
@@ -64,8 +43,6 @@ public class HotelBookingStepDefinitions {
     @Cuando("intenta buscar sin seleccionar fechas")
     public void searchesWithoutDates() {
         OnStage.theActorInTheSpotlight().attemptsTo(
-                // Pulsar el botón de búsqueda sin setear fechas;
-                // React puede bloquear el submit o mostrar mensaje vacío.
                 SearchAvailableRooms.from("").to("")
         );
     }
@@ -82,16 +59,12 @@ public class HotelBookingStepDefinitions {
         OnStage.theActorInTheSpotlight().attemptsTo(
                 CompleteGuestPayment.withName(name).andEmail(email)
         );
-        // Guardar datos del huésped en memoria del actor para trazabilidad en reportes
         OnStage.theActorInTheSpotlight().remember("guestName",  name);
         OnStage.theActorInTheSpotlight().remember("guestEmail", email);
     }
 
     @Cuando("intenta confirmar el pago")
     public void attemptsToConfirmPayment() {
-        // La acción de "Pagar" ya se ejecutó dentro de CompleteGuestPayment.
-        // Aquí esperamos el resultado: puede aparecer el error de rechazo
-        // o bien la página de confirmación si el pago fue exitoso directamente.
         Actor actor = OnStage.theActorInTheSpotlight();
         WebDriver driver = BrowseTheWeb.as(actor).getDriver();
 
@@ -105,12 +78,10 @@ public class HotelBookingStepDefinitions {
                             ExpectedConditions.visibilityOfElementLocated(
                                     By.xpath("//div[contains(@class,'_codeSection_')]//span[contains(@class,'_code_')]"))
                     ));
-            // Determinar cuál resultado apareció primero
             paymentRejected = !driver
                     .findElements(By.xpath("//p[contains(text(),'Pago rechazado')]"))
                     .isEmpty();
         } catch (Exception e) {
-            // Timeout: ninguno de los elementos apareció en el plazo esperado
         }
         actor.remember("paymentRejected", paymentRejected);
     }
@@ -122,12 +93,7 @@ public class HotelBookingStepDefinitions {
         if (Boolean.TRUE.equals(paymentRejected)) {
             actor.attemptsTo(RetryPayment.afterRejection());
         }
-        // Si el pago ya fue exitoso directamente, no hay nada que reintentar
     }
-
-    // -----------------------------------------------------------------------
-    // THEN – Verificaciones
-    // -----------------------------------------------------------------------
 
     @Entonces("ve un listado de habitaciones disponibles para seleccionar")
     public void seesRoomList() {
@@ -161,7 +127,6 @@ public class HotelBookingStepDefinitions {
                           .containsIgnoringCase("Pago rechazado por el banco")
             );
         }
-        // Si el pago fue exitoso directamente, omitir esta verificación
     }
 
     @Entonces("su reserva queda confirmada con un código de reserva válido")
@@ -169,8 +134,6 @@ public class HotelBookingStepDefinitions {
         OnStage.theActorInTheSpotlight().attemptsTo(
                 Ensure.that(TheBookingCode.displayed()).isNotEmpty()
         );
-
-        // Guardar el código en memoria del actor para potenciales pasos siguientes
         String code = OnStage.theActorInTheSpotlight().asksFor(TheBookingCode.displayed());
         OnStage.theActorInTheSpotlight().remember("bookingCode", code);
     }

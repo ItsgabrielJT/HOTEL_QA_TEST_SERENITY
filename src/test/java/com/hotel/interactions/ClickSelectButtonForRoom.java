@@ -7,28 +7,10 @@ import net.serenitybdd.screenplay.abilities.BrowseTheWeb;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 
-/**
- * Interacción personalizada para hacer clic en el botón "Seleccionar" de una tarjeta
- * de habitación en aplicaciones React/Vite.
- *
- * <p>El motivo de esta clase: los selectores XPath con {@code text()} pueden fallar en
- * apps React porque el contenido puede tener whitespace invisible, y los eventos de clic
- * de Selenium pueden no disparar correctamente en componentes controlados por React.
- * La solución más robusta es encontrar la tarjeta por su número usando JavaScript y
- * disparar el evento {@code click()} directamente sobre el botón.
- *
- * <p>Uso:
- * <pre>{@code
- * actor.attemptsTo(
- *     ClickSelectButtonForRoom.withNumber("#101")
- * );
- * }</pre>
- */
 public class ClickSelectButtonForRoom implements Interaction {
 
     private final String roomNumber;
 
-    /** Constructor por defecto requerido por Serenity para reportes correctos. */
     public ClickSelectButtonForRoom() {
         this.roomNumber = "";
     }
@@ -37,11 +19,6 @@ public class ClickSelectButtonForRoom implements Interaction {
         this.roomNumber = roomNumber;
     }
 
-    /**
-     * Crea la interacción para el número de habitación indicado.
-     *
-     * @param roomNumber número de habitación con prefijo '#', p.ej. "#101"
-     */
     public static ClickSelectButtonForRoom withNumber(String roomNumber) {
         return new ClickSelectButtonForRoom(roomNumber);
     }
@@ -52,10 +29,6 @@ public class ClickSelectButtonForRoom implements Interaction {
         WebDriver driver = BrowseTheWeb.as(actor).getDriver();
         JavascriptExecutor js = (JavascriptExecutor) driver;
 
-        // Buscar la primera tarjeta cuyo span de número (class que incluye "_number_")
-        // contenga exactamente el roomNumber buscado, con polling hasta 10 segundos.
-        // IMPORTANTE: capturar arguments[0] en una variable local ANTES de cualquier
-        // callback anidado; de lo contrario cada función tiene su propio objeto arguments.
         String script =
             "var num = arguments[0];" +
             "var maxWait = 10000;" +
