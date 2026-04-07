@@ -1,0 +1,60 @@
+plugins {
+    id 'java'
+    id 'net.serenity-bdd.serenity-gradle-plugin' version '4.2.34'
+}
+
+group = 'com.hotel'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    serenityVersion = '4.2.34'
+    junitVersion    = '4.13.2'
+}
+
+dependencies {
+    // Serenity BDD – Screenplay + Cucumber
+    testImplementation "net.serenity-bdd:serenity-core:${serenityVersion}"
+    testImplementation "net.serenity-bdd:serenity-screenplay:${serenityVersion}"
+    testImplementation "net.serenity-bdd:serenity-screenplay-webdriver:${serenityVersion}"
+    testImplementation "net.serenity-bdd:serenity-cucumber:${serenityVersion}"
+    testImplementation "net.serenity-bdd:serenity-ensure:${serenityVersion}"
+
+    // JUnit 4 (requerido por CucumberWithSerenity runner)
+    testImplementation "junit:junit:${junitVersion}"
+
+    // Logging SLF4J simple para evitar warnings en modo test
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.13'
+}
+
+// ---- Test task ----------------------------------------------------------
+test {
+    useJUnit()
+
+    // Ejecutar sólo la clase runner de Cucumber
+    include '**/runners/**'
+
+    systemProperty 'file.encoding', 'UTF-8'
+
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+}
+
+// ---- Serenity aggregate report ------------------------------------------
+serenity {
+    reports    = ['single-page-html']
+    testRoot   = 'com.hotel.runners'
+}
+
+// Asegurar que el reporte se genere después del test
+test.finalizedBy('aggregate')
