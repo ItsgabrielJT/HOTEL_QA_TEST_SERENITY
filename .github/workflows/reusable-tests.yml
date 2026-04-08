@@ -152,10 +152,13 @@ jobs:
           DISPLAY: ":99"
         run: |
           # --headless=new está definido en serenity.conf bajo goog:chromeOptions.args.
-          # DISPLAY=:99 apunta a Xvfb (segundo nivel de defensa si Chrome ignora headless).
+          # -Dheadless.mode=true es la propiedad nativa de Serenity como segundo nivel
+          # de defensa en caso de que el parser HOCON no tome el arg del capabilities block.
+          # DISPLAY=:99 apunta a Xvfb (tercer nivel: display virtual si Chrome ignora headless).
           ./gradlew test \
             -Dcucumber.filter.tags="@smoke" \
             -Dwebdriver.base.url="http://localhost:5173" \
+            -Dheadless.mode=true \
             --no-daemon \
             --stacktrace
 

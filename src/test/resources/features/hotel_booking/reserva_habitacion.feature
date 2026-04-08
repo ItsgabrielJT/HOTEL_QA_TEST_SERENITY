@@ -11,7 +11,7 @@ Característica: Reserva de habitación – Happy Path
 
   @happy_path @smoke
   Escenario: Reserva exitosa luego de reintentar el pago rechazado
-    Cuando busca habitaciones del "2026-04-07" al "2026-04-08"
+    Cuando busca habitaciones del "2028-06-15" al "2028-06-16"
     Y selecciona la habitación "#201"
     Y completa sus datos con nombre "Juan García" y email "juan@email.com"
     Y intenta confirmar el pago

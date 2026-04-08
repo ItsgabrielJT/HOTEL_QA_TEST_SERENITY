@@ -10,7 +10,7 @@ Característica: Bloqueo de habitación durante el proceso de reserva
   Escenario: La habitación bloqueada por un usuario no aparece para otro usuario
     Dado que Carlos se encuentra en la página principal del hotel
     Y que Laura se encuentra en la página principal del hotel
-    Cuando Carlos busca habitaciones del "2026-04-07" al "2026-04-08"
+    Cuando Carlos busca habitaciones del "2028-06-15" al "2028-06-16"
     Y Carlos selecciona la habitación "#203"
-    Cuando Laura busca habitaciones del "2026-04-07" al "2026-04-08"
+    Cuando Laura busca habitaciones del "2028-06-15" al "2028-06-16"
     Entonces Laura no ve la habitación "#203" en el listado de disponibles
