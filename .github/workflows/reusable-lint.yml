@@ -1,0 +1,55 @@
+name: Reusable – Lint
+
+on:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Instalar yamllint
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends yamllint
+
+      # Valida todos los archivos de workflow del pipeline Serenity
+      - name: Validar YAML de los workflows
+        run: |
+          yamllint \
+            -d "{extends: relaxed, rules: {line-length: {max: 120}}}" \
+            .github/workflows/serenity-smoke.yml \
+            .github/workflows/reusable-lint.yml \
+            .github/workflows/reusable-tests.yml \
+            .github/workflows/reusable-publish.yml
+
+      # Valida los archivos de configuración del proyecto
+      - name: Validar serenity.conf existe y no está vacío
+        run: |
+          CONF="src/test/resources/serenity.conf"
+          if [ ! -f "${CONF}" ]; then
+            echo "::error::${CONF} no encontrado"
+            exit 1
+          fi
+          echo "serenity.conf OK ($(wc -l < "${CONF}") líneas)"
+
+      # Valida que los feature files tengan el tag @smoke al menos en uno
+      - name: Verificar que existen escenarios @smoke
+        run: |
+          SMOKE_COUNT=$(grep -rl "@smoke" src/test/resources/features/ 2>/dev/null | wc -l)
+          if [ "${SMOKE_COUNT}" -eq 0 ]; then
+            echo "::error::No se encontraron escenarios etiquetados con @smoke"
+            exit 1
+          fi
+          echo "Archivos feature con @smoke: ${SMOKE_COUNT}"
