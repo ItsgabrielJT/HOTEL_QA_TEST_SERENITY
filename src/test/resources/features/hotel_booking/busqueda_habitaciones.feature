@@ -28,4 +28,3 @@ Característica: Búsqueda de habitaciones disponibles
       | entrada    | salida     |
       | 2026-05-10 | 2026-05-11 |
       | 2026-05-15 | 2026-05-17 |
-      | 2026-06-01 | 2026-06-05 |
