@@ -1,0 +1,199 @@
+name: Reusable – Serenity Smoke Tests
+
+on:
+  workflow_call:
+    inputs:
+      target_repo_url:
+        description: "URL del repositorio del sistema bajo prueba (sobreescribe vars.SERENITY_TARGET_REPO_URL)"
+        type:     string
+        required: false
+      target_repo_branch:
+        description: "Rama del repositorio objetivo (sobreescribe vars.SERENITY_TARGET_REPO_BRANCH)"
+        type:     string
+        required: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+
+  smoke-tests:
+    name: Levantar Servicios + Ejecutar @smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    env:
+      # ── Repositorio objetivo ──────────────────────────────────────────────
+      TARGET_REPO_URL:    ${{ inputs.target_repo_url    || vars.SERENITY_TARGET_REPO_URL    || 'https://github.com/EGgames/HOTEL-MVP.git' }}
+      TARGET_REPO_BRANCH: ${{ inputs.target_repo_branch || vars.SERENITY_TARGET_REPO_BRANCH || 'dev' }}
+      # ── Docker Compose ────────────────────────────────────────────────────
+      COMPOSE_PROJECT_NAME: hotel-serenity-${{ github.run_id }}
+      # ── Gradle ───────────────────────────────────────────────────────────
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false"
+      # ── Directorio del sistema bajo prueba ───────────────────────────────
+      SUT_DIR: target-under-test
+
+    steps:
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 1: Preparación del runner
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Checkout QA repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: "Configurar Java 17 (Temurin)"
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verificar Google Chrome (requerido por Selenium)
+        id: chrome-check
+        run: |
+          # Los runners ubuntu-22.04 de GitHub tienen Chrome pre-instalado.
+          # Si no está presente, se instala desde el repositorio oficial de Google.
+          CHROME_BIN="$(command -v google-chrome-stable 2>/dev/null \
+                        || command -v google-chrome 2>/dev/null \
+                        || true)"
+
+          if [ -z "${CHROME_BIN}" ]; then
+            echo "Chrome no encontrado en el PATH – instalando desde dl.google.com..."
+            wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
+              | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] \
+                  http://dl.google.com/linux/chrome/deb/ stable main" \
+              | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
+            sudo apt-get update -q
+            sudo apt-get install -y --no-install-recommends google-chrome-stable
+          fi
+
+          CHROME_VERSION="$(google-chrome-stable --version 2>/dev/null \
+                            || google-chrome --version 2>/dev/null)"
+          echo "chrome_version=${CHROME_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Versión de Chrome: ${CHROME_VERSION}"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 2: Levantar servicios (Docker Compose)
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "Clonar sistema bajo prueba @ ${TARGET_REPO_BRANCH}"
+        run: |
+          echo "Clonando ${TARGET_REPO_URL} (rama: ${TARGET_REPO_BRANCH})"
+          git clone \
+            --depth 1 \
+            --branch "${TARGET_REPO_BRANCH}" \
+            "${TARGET_REPO_URL}" \
+            "${SUT_DIR}"
+          echo "Contenido del repositorio:"
+          ls -la "${SUT_DIR}/"
+
+      - name: Iniciar servicios con Docker Compose
+        working-directory: ${{ env.SUT_DIR }}
+        run: |
+          # Docker Compose v2 detecta automáticamente compose.yaml / compose.yml /
+          # docker-compose.yaml / docker-compose.yml en el directorio de trabajo.
+          echo "Levantando servicios (compose project: ${COMPOSE_PROJECT_NAME})..."
+          docker compose up -d --wait 2>/dev/null \
+            || docker compose up -d   # fallback sin --wait (versiones antiguas)
+
+          echo ""
+          echo "── Estado de los contenedores ──"
+          docker compose ps
+
+      - name: "Health check – esperar frontend en http://localhost:5173"
+        timeout-minutes: 3
+        run: |
+          echo "Esperando que http://localhost:5173 responda..."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=90          # 90 × 2s = 180s máximo
+
+          until curl -sf --max-time 3 http://localhost:5173 > /dev/null 2>&1; do
+            ATTEMPTS=$(( ATTEMPTS + 1 ))
+            if [ "${ATTEMPTS}" -ge "${MAX_ATTEMPTS}" ]; then
+              echo "::error::La aplicación no respondió en http://localhost:5173 tras $(( MAX_ATTEMPTS * 2 ))s"
+              echo ""
+              echo "── Últimas líneas de los logs de Docker Compose ──"
+              docker compose -p "${COMPOSE_PROJECT_NAME}" logs --tail=60 || true
+              exit 1
+            fi
+            echo "[${ATTEMPTS}/${MAX_ATTEMPTS}] Esperando... (${ATTEMPTS}× 2s = $(( ATTEMPTS * 2 ))s)"
+            sleep 2
+          done
+
+          echo "Aplicación disponible tras $(( ATTEMPTS * 2 )) segundos"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 3: Ejecutar Smoke Tests con Serenity BDD
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: "Ejecutar Serenity Smoke Tests (@smoke, Chrome headless)"
+        run: |
+          ./gradlew test \
+            -Dcucumber.filter.tags="@smoke" \
+            -Dchrome.switches="--headless=new,--disable-gpu,--no-sandbox,--disable-dev-shm-usage,--window-size=1920,1080,--remote-allow-origins=*" \
+            -Dwebdriver.base.url="http://localhost:5173" \
+            --no-daemon \
+            --stacktrace
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 4: Resumen del pipeline (siempre corre aunque los tests fallen)
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Publicar resumen en GitHub Step Summary
+        if: always()
+        run: |
+          SUMMARY_FILE="target/site/serenity/summary.txt"
+
+          {
+            echo "## Serenity Smoke Tests"
+            echo ""
+            echo "| Campo              | Valor |"
+            echo "|--------------------|-------|"
+            echo "| Chrome             | \`${{ steps.chrome-check.outputs.chrome_version }}\` |"
+            echo "| Repositorio SUT    | \`${TARGET_REPO_URL}\` |"
+            echo "| Rama SUT           | \`${TARGET_REPO_BRANCH}\` |"
+            echo "| Tag Cucumber       | \`@smoke\` |"
+            echo "| Run ID             | [\`${GITHUB_RUN_ID}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
+            echo ""
+
+            if [ -f "${SUMMARY_FILE}" ]; then
+              echo "### Resumen de Serenity BDD"
+              echo ""
+              echo '```'
+              cat "${SUMMARY_FILE}"
+              echo '```'
+            else
+              echo "> **Nota:** El archivo de resumen de Serenity no fue generado."
+              echo "> Revisa los logs del paso *Ejecutar Serenity Smoke Tests* para más detalles."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 5: Teardown y artefactos
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Detener servicios Docker Compose
+        if: always()
+        working-directory: ${{ env.SUT_DIR }}
+        run: |
+          echo "Deteniendo servicios (compose project: ${COMPOSE_PROJECT_NAME})..."
+          docker compose down --volumes --remove-orphans 2>/dev/null || true
+          echo "Servicios detenidos."
+
+      - name: Subir reporte Serenity como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name:              serenity-report-${{ github.run_id }}
+          path:              target/site/serenity/
+          if-no-files-found: warn
+          retention-days:    14
