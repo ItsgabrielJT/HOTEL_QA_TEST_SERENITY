@@ -1,0 +1,97 @@
+name: Serenity QA – Smoke Tests
+
+# ── Permisos mínimos por defecto ─────────────────────────────────────────────
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# ── Evitar ejecuciones redundantes ───────────────────────────────────────────
+concurrency:
+  group: serenity-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Disparadores ─────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo_url:
+        description: "URL del repositorio del sistema bajo prueba"
+        required: false
+        default: ''
+      target_repo_branch:
+        description: "Rama del repositorio objetivo (ej: dev, main)"
+        required: false
+        default: ''
+      failure_issues_enabled:
+        description: "Crear issue automático ante fallos (true | false)"
+        required: false
+        default: ''
+
+  repository_dispatch:
+    types: [e2e-trigger]
+
+  schedule:
+    # Cada 6 horas – monitoreo continuo del sistema bajo prueba
+    - cron: '0 */6 * * *'
+
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/serenity-smoke.yml
+      - .github/workflows/reusable-*.yml
+      - build.gradle
+      - settings.gradle
+      - src/test/**
+      - README.md
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/serenity-smoke.yml
+      - .github/workflows/reusable-*.yml
+      - build.gradle
+      - settings.gradle
+      - src/test/**
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. Lint – Validación de calidad del pipeline ─────────────────────────
+  lint:
+    name: Lint
+    uses: ./.github/workflows/reusable-lint.yml
+
+  # ── 2. Smoke Tests – Levantar servicios + ejecutar suite @smoke ──────────
+  smoke-tests:
+    name: Smoke Tests
+    needs: lint
+    uses: ./.github/workflows/reusable-tests.yml
+    with:
+      target_repo_url:    ${{ inputs.target_repo_url    }}
+      target_repo_branch: ${{ inputs.target_repo_branch }}
+
+  # ── 3. Publish – Reporte Serenity en GitHub Pages + notificaciones ───────
+  publish:
+    name: Publicar Reporte Serenity
+    needs: smoke-tests
+    # Corre siempre (éxito o fallo) salvo en pull_request donde Pages no aplica
+    if: >-
+      always() &&
+      github.event_name != 'pull_request' &&
+      (
+        needs.smoke-tests.result == 'success' ||
+        needs.smoke-tests.result == 'failure'
+      )
+    uses: ./.github/workflows/reusable-publish.yml
+    permissions:
+      contents: read
+      issues:   write
+      pages:    write
+      id-token: write
+    with:
+      failure_issues_enabled: ${{ inputs.failure_issues_enabled }}
+      smoke_result:           ${{ needs.smoke-tests.result }}
