@@ -1,0 +1,245 @@
+name: Reusable – Publicar Reporte Serenity
+
+on:
+  workflow_call:
+    inputs:
+      failure_issues_enabled:
+        description: "Crear issue automático cuando falle la suite (sobreescribe vars.SERENITY_FAILURE_ISSUES_ENABLED)"
+        type:     string
+        required: false
+      smoke_result:
+        description: "Resultado del job smoke-tests (success | failure | cancelled | skipped)"
+        type:     string
+        required: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+
+  publish:
+    name: Publicar Reporte & Notificaciones
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues:   write
+      pages:    write
+      id-token: write
+
+    # Expone la URL de GitHub Pages como URL del entorno en la UI de Actions
+    environment:
+      name: serenity-report
+      url:  ${{ steps.deploy-pages.outputs.page_url }}
+
+    env:
+      # Combina el input manual con la variable del repositorio
+      FAILURE_ISSUES_ENABLED: ${{ inputs.failure_issues_enabled || vars.SERENITY_FAILURE_ISSUES_ENABLED || 'false' }}
+
+    steps:
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 1: Descargar artefactos
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Descargar artefacto del reporte Serenity
+        uses: actions/download-artifact@v4
+        with:
+          name: serenity-report-${{ github.run_id }}
+          path: downloaded-serenity/
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 2: Gestión de issues (notificaciones automáticas)
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Construir cuerpo del issue de fallo
+        if: inputs.smoke_result == 'failure' && env.FAILURE_ISSUES_ENABLED == 'true'
+        run: |
+          mkdir -p qa-artifacts
+          {
+            echo "# Serenity Smoke Tests – Fallo detectado"
+            echo ""
+            echo "| Campo           | Valor |"
+            echo "|-----------------|-------|"
+            echo "| Resultado       | \`${{ inputs.smoke_result }}\` |"
+            echo "| Workflow run    | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |"
+            echo "| Commit          | \`${GITHUB_SHA:0:8}\` |"
+            echo "| Ref             | \`${GITHUB_REF_NAME}\` |"
+            echo ""
+            echo "## Resumen de Serenity"
+            echo ""
+            echo '```text'
+            cat downloaded-serenity/summary.txt 2>/dev/null \
+              || echo "El archivo summary.txt no fue generado en esta ejecución."
+            echo '```'
+            echo ""
+            echo "---"
+            echo "*Issue generado automáticamente por el pipeline de CI/CD.*"
+          } > qa-artifacts/issue-body.md
+
+          # Truncar si supera el límite de GitHub Issues (65 000 chars)
+          BODY_SIZE=$(wc -c < qa-artifacts/issue-body.md | tr -d ' ')
+          if [ "${BODY_SIZE}" -gt 65000 ]; then
+            tmp=$(mktemp)
+            head -c 65000 qa-artifacts/issue-body.md > "${tmp}"
+            printf '\n\n[contenido truncado automáticamente por límite de GitHub Issues]\n' >> "${tmp}"
+            mv "${tmp}" qa-artifacts/issue-body.md
+          fi
+
+      - name: Crear o actualizar issue de fallo
+        if: inputs.smoke_result == 'failure' && env.FAILURE_ISSUES_ENABLED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs    = require('fs');
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const title = 'Serenity Smoke Tests – Fallo en CI';
+            const labels = ['qa-failure', 'serenity', 'smoke'];
+
+            // Garantizar que las etiquetas existan (ignora 422 si ya existen)
+            for (const name of labels) {
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name });
+              } catch (err) {
+                if (err.status !== 422) throw err;
+              }
+            }
+
+            const body = fs.readFileSync('qa-artifacts/issue-body.md', 'utf8');
+
+            const search = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue in:title "${title}"`,
+              per_page: 1,
+            });
+
+            if (search.data.items.length > 0) {
+              const issue_number = search.data.items[0].number;
+              // Reabre si estaba cerrado
+              if (search.data.items[0].state === 'closed') {
+                await github.rest.issues.update({ owner, repo, issue_number, state: 'open' });
+              }
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels });
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info(`Issue actualizado: #${issue_number}`);
+            } else {
+              const created = await github.rest.issues.create({ owner, repo, title, body, labels });
+              core.info(`Issue creado: #${created.data.number}`);
+            }
+
+      - name: Cerrar issue de fallo cuando los tests se recuperan
+        if: inputs.smoke_result == 'success' && env.FAILURE_ISSUES_ENABLED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const title = 'Serenity Smoke Tests – Fallo en CI';
+
+            const resolutionBody = [
+              '# Serenity Smoke Tests – Recuperados',
+              '',
+              `- Workflow run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              `- Commit: \`${process.env.GITHUB_SHA?.slice(0, 8)}\``,
+              '',
+              'Todos los smoke tests volvieron a pasar. Cerrando issue automáticamente.',
+            ].join('\n');
+
+            const search = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue is:open in:title "${title}"`,
+              per_page: 1,
+            });
+
+            if (search.data.items.length > 0) {
+              const issue_number = search.data.items[0].number;
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: resolutionBody });
+              await github.rest.issues.update({ owner, repo, issue_number, state: 'closed' });
+              core.info(`Issue cerrado: #${issue_number}`);
+            } else {
+              core.info('No hay issue de fallo abierto que cerrar.');
+            }
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 3: GitHub Pages – Publicar reporte Serenity
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Preparar contenido para GitHub Pages
+        run: |
+          mkdir -p pages-site
+
+          # Copiar el reporte Serenity completo si existe
+          if [ -d downloaded-serenity ] && [ "$(ls -A downloaded-serenity/)" ]; then
+            cp -R downloaded-serenity/. pages-site/
+            echo "Archivos del reporte Serenity copiados a pages-site/"
+          fi
+
+          # Generar index.html de fallback si Serenity no produjo el reporte
+          if [ ! -f pages-site/index.html ]; then
+            RESULT="${{ inputs.smoke_result }}"
+            COLOR="$([ "${RESULT}" = 'success' ] && echo '#16a34a' || echo '#dc2626')"
+            cat > pages-site/index.html <<EOF
+          <!doctype html>
+          <html lang="es">
+            <head>
+              <meta charset="utf-8" />
+              <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Serenity QA – Hotel Booking</title>
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                       margin: 2rem; color: #1f2937; max-width: 56rem; }
+                .badge { display: inline-block; padding: .25rem .75rem; border-radius: 9999px;
+                         background: ${COLOR}; color: white; font-weight: 600; }
+              </style>
+            </head>
+            <body>
+              <h1>Serenity QA – Hotel Booking</h1>
+              <p>La ejecución no generó el reporte HTML de Serenity esperado.</p>
+              <p>Resultado: <span class="badge">${RESULT}</span></p>
+              <p>Run: <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">${{ github.run_id }}</a></p>
+            </body>
+          </html>
+          EOF
+          fi
+
+          # Deshabilitar Jekyll para que GitHub Pages sirva el HTML directamente
+          touch pages-site/.nojekyll
+
+          echo "Contenido de pages-site/:"
+          ls -la pages-site/
+
+      - name: Subir artefacto de Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-site/
+
+      - name: Desplegar en GitHub Pages
+        id: deploy-pages
+        uses: actions/deploy-pages@v4
+
+      # ──────────────────────────────────────────────────────────────────────
+      # BLOQUE 4: Summary final del job publish
+      # ──────────────────────────────────────────────────────────────────────
+
+      - name: Resumen del deploy en Step Summary
+        if: always()
+        run: |
+          {
+            echo "## Publicación del Reporte Serenity"
+            echo ""
+            echo "| Campo         | Valor |"
+            echo "|---------------|-------|"
+            echo "| Smoke result  | \`${{ inputs.smoke_result }}\` |"
+            echo "| Pages URL     | ${{ steps.deploy-pages.outputs.page_url }} |"
+            echo "| Issues auto   | \`${FAILURE_ISSUES_ENABLED}\` |"
+            echo ""
+            echo "El reporte completo de Serenity está disponible en GitHub Pages."
+          } >> "${GITHUB_STEP_SUMMARY}"
