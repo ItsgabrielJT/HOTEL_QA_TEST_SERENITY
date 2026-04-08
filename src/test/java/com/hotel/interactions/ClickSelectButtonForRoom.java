@@ -29,16 +29,18 @@ public class ClickSelectButtonForRoom implements Interaction {
         WebDriver driver = BrowseTheWeb.as(actor).getDriver();
         JavascriptExecutor js = (JavascriptExecutor) driver;
 
+        // Polling asíncrono con Promise para no bloquear el event loop del browser
         String script =
             "var num = arguments[0];" +
+            "var done = arguments[arguments.length - 1];" +
             "var maxWait = 10000;" +
             "var interval = 300;" +
-            "var waited = 0;" +
             "function tryFind() {" +
             "  var articles = Array.from(document.querySelectorAll('article'));" +
             "  for (var i = 0; i < articles.length; i++) {" +
-            "    var numberSpan = articles[i].querySelector('span[class*=\"_number_\"]');" +
-            "    if (numberSpan && numberSpan.textContent.trim() === num) {" +
+            "    var spans = Array.from(articles[i].querySelectorAll('span'));" +
+            "    var match = spans.find(function(s) { return s.textContent.trim() === num; });" +
+            "    if (match) {" +
             "      articles[i].scrollIntoView({ behavior: 'instant', block: 'center' });" +
             "      var btn = articles[i].querySelector('button');" +
             "      if (btn) { btn.click(); return true; }" +
@@ -46,17 +48,14 @@ public class ClickSelectButtonForRoom implements Interaction {
             "  }" +
             "  return false;" +
             "}" +
-            "var found = false;" +
             "var deadline = Date.now() + maxWait;" +
-            "while (!found && Date.now() < deadline) {" +
-            "  found = tryFind();" +
-            "  if (!found) {" +
-            "    var start = Date.now(); while(Date.now() - start < interval) {}" +
-            "  }" +
+            "function poll() {" +
+            "  if (tryFind()) { done(true); return; }" +
+            "  if (Date.now() >= deadline) { done(new Error('No se encontró la habitación tras ' + maxWait + 'ms: ' + num)); return; }" +
+            "  setTimeout(poll, interval);" +
             "}" +
-            "if (!found) { throw new Error('No se encontró la habitación tras ' + maxWait + 'ms: ' + num); }" +
-            "return true;";
+            "poll();";
 
-        js.executeScript(script, roomNumber);
+        js.executeAsyncScript(script, roomNumber);
     }
 }
