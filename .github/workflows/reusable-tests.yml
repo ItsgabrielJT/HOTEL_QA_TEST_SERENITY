@@ -137,9 +137,13 @@ jobs:
 
       - name: "Ejecutar Serenity Smoke Tests (@smoke, Chrome headless)"
         run: |
+          # -Denvironment=ci activa el perfil "ci" de serenity.conf que incluye
+          # --headless=new y --remote-allow-origins=* en goog:chromeOptions.args.
+          # No se usa -Dchrome.switches porque Serenity lo parsea separando por
+          # coma, lo que rompe "--window-size=1920,1080" en dos tokens inválidos.
           ./gradlew test \
             -Dcucumber.filter.tags="@smoke" \
-            -Dchrome.switches="--headless=new,--disable-gpu,--no-sandbox,--disable-dev-shm-usage,--window-size=1920,1080,--remote-allow-origins=*" \
+            -Denvironment=ci \
             -Dwebdriver.base.url="http://localhost:5173" \
             --no-daemon \
             --stacktrace
