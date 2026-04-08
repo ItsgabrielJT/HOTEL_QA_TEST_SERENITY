@@ -108,6 +108,19 @@ jobs:
           echo "Contenido del repositorio:"
           ls -la "${SUT_DIR}/"
 
+      - name: "Compilar backend NestJS en el runner (genera dist/ antes del volumen Docker)"
+        # El docker-compose.yml del SUT monta './backend:/app' que sobreescribe el
+        # directorio del contenedor, incluido dist/. Como dist/ está en .gitignore,
+        # el clon no lo tiene y el contenedor falla con MODULE_NOT_FOUND.
+        # Compilamos en el runner para que el volumen ya contenga dist/ al arrancar.
+        working-directory: ${{ env.SUT_DIR }}/backend
+        run: |
+          node --version
+          npm ci --prefer-offline
+          npm run build
+          echo "── Contenido de dist/ ──"
+          ls dist/
+
       - name: Iniciar servicios con Docker Compose
         working-directory: ${{ env.SUT_DIR }}
         run: |
@@ -168,11 +181,11 @@ jobs:
       - name: "Seed – cargar datos iniciales en la base de datos"
         working-directory: ${{ env.SUT_DIR }}
         run: |
-          # El Dockerfile de producción copia dist/ completamente, incluyendo
-          # dist/database/seeds/seed.js compilado por `nest build`.
-          # El seed verifica si ya hay hoteles antes de insertar (idempotente).
+          # dist/database/seeds/seed.js existe porque compilamos en el runner
+          # antes de docker compose up (el volumen ./backend:/app lo expone al contenedor).
+          # El seed es idempotente: verifica si ya hay hoteles antes de insertar.
           echo "Ejecutando seed de datos..."
-          docker compose exec -T api node dist/database/seeds/seed
+          docker compose exec -T api node /app/dist/database/seeds/seed
           echo "Seed completado"
 
       # ──────────────────────────────────────────────────────────────────────
