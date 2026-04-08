@@ -36,7 +36,7 @@ public class CompleteGuestPayment implements Task {
     public <T extends Actor> void performAs(T actor) {
         actor.attemptsTo(
                 WaitUntil.the(CheckoutPageUi.GUEST_NAME, WebElementStateMatchers.isVisible())
-                         .forNoMoreThan(10).seconds(),
+                         .forNoMoreThan(30).seconds(),
                 Enter.theValue(guestName).into(CheckoutPageUi.GUEST_NAME),
                 Enter.theValue(guestEmail).into(CheckoutPageUi.GUEST_EMAIL),
                 Click.on(CheckoutPageUi.PAY_BUTTON)

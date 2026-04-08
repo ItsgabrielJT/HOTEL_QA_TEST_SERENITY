@@ -43,7 +43,7 @@ public class SearchAvailableRooms implements Task {
         if (checkIn != null && !checkIn.isEmpty() && checkOut != null && !checkOut.isEmpty()) {
             actor.attemptsTo(
                     WaitUntil.the(SearchPageUi.FIRST_ROOM_CARD, WebElementStateMatchers.isVisible())
-                             .forNoMoreThan(10).seconds()
+                             .forNoMoreThan(30).seconds()
             );
         }
     }

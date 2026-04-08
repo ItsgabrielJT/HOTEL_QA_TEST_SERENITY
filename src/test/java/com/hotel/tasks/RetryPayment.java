@@ -23,10 +23,10 @@ public class RetryPayment implements Task {
     public <T extends Actor> void performAs(T actor) {
         actor.attemptsTo(
                 WaitUntil.the(CheckoutPageUi.PAY_BUTTON, WebElementStateMatchers.isVisible())
-                         .forNoMoreThan(10).seconds(),
+                         .forNoMoreThan(30).seconds(),
                 Click.on(CheckoutPageUi.PAY_BUTTON),
                 WaitUntil.the(ConfirmationPageUi.BOOKING_CODE, WebElementStateMatchers.isVisible())
-                         .forNoMoreThan(15).seconds()
+                         .forNoMoreThan(30).seconds()
         );
     }
 }

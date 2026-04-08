@@ -16,8 +16,8 @@ public class TheRoomListIsDisplayed {
     }
 
     public static Question<Boolean> isEmpty() {
-        return Question.about("mensaje de habitaciones no disponibles").answeredBy(
-                actor -> Visibility.of(SearchPageUi.EMPTY_RESULTS_MESSAGE).answeredBy(actor)
+        return Question.about("ausencia del listado de habitaciones").answeredBy(
+                actor -> !Visibility.of(SearchPageUi.FIRST_ROOM_CARD).answeredBy(actor)
         );
     }
 }

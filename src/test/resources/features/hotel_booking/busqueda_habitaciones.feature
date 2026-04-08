@@ -11,7 +11,7 @@ Característica: Búsqueda de habitaciones disponibles
 
   @busqueda_con_resultados
   Escenario: El huésped visualiza habitaciones disponibles al buscar fechas válidas
-    Cuando busca habitaciones del "2028-06-15" al "2028-06-16"
+    Cuando busca habitaciones del "2026-05-10" al "2026-05-11"
     Entonces ve un listado de habitaciones disponibles para seleccionar
 
   @busqueda_sin_fechas
@@ -26,6 +26,6 @@ Característica: Búsqueda de habitaciones disponibles
 
     Ejemplos:
       | entrada    | salida     |
-      | 2028-06-15 | 2028-06-16 |
-      | 2028-06-20 | 2028-06-22 |
-      | 2028-07-01 | 2028-07-05 |
+      | 2026-05-10 | 2026-05-11 |
+      | 2026-05-15 | 2026-05-17 |
+      | 2026-06-01 | 2026-06-05 |

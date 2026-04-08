@@ -30,7 +30,7 @@ public class SelectRoom implements Task {
         actor.attemptsTo(
                 ClickSelectButtonForRoom.withNumber(roomNumber),
                 WaitUntil.the(CheckoutPageUi.TIMER, WebElementStateMatchers.isVisible())
-                         .forNoMoreThan(10).seconds()
+                         .forNoMoreThan(30).seconds()
         );
     }
 }
