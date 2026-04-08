@@ -121,6 +121,28 @@ jobs:
           echo "── Estado de los contenedores ──"
           docker compose ps
 
+      - name: "Health check – esperar API backend en http://localhost:3000/health"
+        timeout-minutes: 3
+        run: |
+          echo "Esperando que http://localhost:3000/health responda..."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=90          # 90 × 2s = 180s máximo
+
+          until curl -sf --max-time 3 http://localhost:3000/health > /dev/null 2>&1; do
+            ATTEMPTS=$(( ATTEMPTS + 1 ))
+            if [ "${ATTEMPTS}" -ge "${MAX_ATTEMPTS}" ]; then
+              echo "::error::La API no respondió en http://localhost:3000/health tras $(( MAX_ATTEMPTS * 2 ))s"
+              echo ""
+              echo "── Últimas líneas de los logs Docker Compose ──"
+              docker compose -p "${COMPOSE_PROJECT_NAME}" logs --tail=60 || true
+              exit 1
+            fi
+            echo "[${ATTEMPTS}/${MAX_ATTEMPTS}] Esperando API... (${ATTEMPTS}× 2s = $(( ATTEMPTS * 2 ))s)"
+            sleep 2
+          done
+
+          echo "API disponible tras $(( ATTEMPTS * 2 )) segundos"
+
       - name: "Health check – esperar frontend en http://localhost:5173"
         timeout-minutes: 3
         run: |
@@ -142,6 +164,16 @@ jobs:
           done
 
           echo "Aplicación disponible tras $(( ATTEMPTS * 2 )) segundos"
+
+      - name: "Seed – cargar datos iniciales en la base de datos"
+        working-directory: ${{ env.SUT_DIR }}
+        run: |
+          # El Dockerfile de producción copia dist/ completamente, incluyendo
+          # dist/database/seeds/seed.js compilado por `nest build`.
+          # El seed verifica si ya hay hoteles antes de insertar (idempotente).
+          echo "Ejecutando seed de datos..."
+          docker compose exec -T api node dist/database/seeds/seed
+          echo "Seed completado"
 
       # ──────────────────────────────────────────────────────────────────────
       # BLOQUE 3: Ejecutar Smoke Tests con Serenity BDD
