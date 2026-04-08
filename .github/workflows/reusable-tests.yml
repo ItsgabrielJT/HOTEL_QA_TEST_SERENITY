@@ -56,6 +56,18 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Xvfb provee un display virtual X11 para Chrome incluso en headless=new.
+      # Es un segundo nivel de defensa: si Chrome ignora --headless=new por
+      # alguna razón de versión, Xvfb garantiza que haya display disponible.
+      - name: Iniciar Xvfb (display virtual X11)
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+          echo "DISPLAY=:99" >> "${GITHUB_ENV}"
+          # Esperar a que Xvfb arranque
+          sleep 2
+          echo "Xvfb iniciado en DISPLAY=:99"
+
       - name: Verificar Google Chrome (requerido por Selenium)
         id: chrome-check
         run: |
@@ -136,14 +148,13 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────
 
       - name: "Ejecutar Serenity Smoke Tests (@smoke, Chrome headless)"
+        env:
+          DISPLAY: ":99"
         run: |
-          # -Denvironment=ci activa el perfil "ci" de serenity.conf que incluye
-          # --headless=new y --remote-allow-origins=* en goog:chromeOptions.args.
-          # No se usa -Dchrome.switches porque Serenity lo parsea separando por
-          # coma, lo que rompe "--window-size=1920,1080" en dos tokens inválidos.
+          # --headless=new está definido en serenity.conf bajo goog:chromeOptions.args.
+          # DISPLAY=:99 apunta a Xvfb (segundo nivel de defensa si Chrome ignora headless).
           ./gradlew test \
             -Dcucumber.filter.tags="@smoke" \
-            -Denvironment=ci \
             -Dwebdriver.base.url="http://localhost:5173" \
             --no-daemon \
             --stacktrace
